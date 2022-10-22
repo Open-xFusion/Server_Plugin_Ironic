@@ -1,41 +1,55 @@
 # Server_Management_Plugin_ironic
 
-## I. Plug-in Introduction
+## Ⅰ. Plug-in Introduction
 
-The Ironic plug-in is a plug-in integrated in the OpenStack software. It is used to manage XFUSION servers. By adding XFUSION servers, 
+The Ironic plug-in is a plug-in integrated in the OpenStack software. It is used to manage servers. By adding servers, 
 you can implement the OS deployment on servers by using this plug-in.
 
 - Plug-in name: `ironic_driver_for_iBMC`
-- Supported version: `OpenStack Ussuri`
+- Supported version: `OpenStack Ussuri`, `OpenStack yoga`
 - Supported device: Rack server `2288H V5`, `CH121 V5 `
+- Supported iBMC Versions: `3.18 or later`
 
-## II. Plug-in Functions
+## Ⅱ. Plug-in Functions
 
 - OS deployment
-- Boot sequence query
+- Startup sequence query
 
-## III. Install/Uninstall iBMC driver 
+## Ⅲ. Prerequisites
+
+The iBMC Client library should be installed on the ironic conductor.
+You can download the iBMC_Client installation package from Github and unzip it,then enter the ibmc_client directory and use the 'python setup.py install' command to install it.   
+
+## Ⅳ. Install/Uninstall iBMC driver 
  
 This guide is based on Ubuntu 18.04.
+If you need to adopt yoga version, use Ubuntu 20.04 or later.
  
 ### 1. Installing Plug-in
 
-- Connect to the OpenStack Rocky environment.
+- Connect to the OpenStack Ussuri environment.
 
-- download and install  [driver](https://github.com/Open-xFusion/Server_Plugin_Ironic)
+- download and install  [driver](https://github.com/Open-xFusion/Server_Plugin_Openstack)
+-- Verify the integrity of the ironic plug-in software package.
+     a. Go to the directory where the plug-in software package and SHA256 verification file are stored.
+     b. Run the sha256sum -c < (grep 'software package name' 'sha256 verification file name') command to verify the software package.Example: sha256sum -c <(grep 'ironic-ibmc-driver-patch.tar.gz' 'ironic-ibmc-driver-patch.tar.sha256.sum')
+     c. Check whether the verification result is OK.
+      - If yes, the software package has not been tampered with and can be used.
+      - If no, the software package has been tampered with. Obtain a new software package.
 ```bash
 $ mkdir ~/ironic-ibmc-driver
 $ cd ~/ironic-ibmc-driver
-$ curl -O https://github.com/Open-xFusion/Server_Plugin_Ironic/main/release/ironic-ibmc-driver-patch.tar.gz
-$ tar zxvf ironic_driver_for_iBMC.tar.gz
+$ curl -O https://raw.githubusercontent.com/Open-xFusion/Server_Plugin_ironic/master/release/ironic-ibmc-driver-patch.tar.gz
+$ tar zxvf ironic-ibmc-driver-patch.tar.gz
+$ sudo ./install.sh uninstall	
 $ sudo ./install.sh
 ```   
 
 - Export fake OpenStack authentication info
 
 ```bash
-$ export OS_URL=http://127.0.0.1:6385
-$ export OS_TOKEN=fake
+$ export OS_ENDPOINT=http://127.0.0.1:6385
+$ export OS_AUTH_TYPE=none
 ```
 
 - Restart Ironic conductor service
@@ -58,12 +72,10 @@ $ openstack baremetal driver list
 
 
 ``` bash
-$ cd ~/ironic-ibmc-driver
 $ sudo ./install.sh uninstall	
 ```
 
-
-## IV. Deploy Nodes using ibmc driver 
+## Ⅴ. Create bare metal server node
 
 The process below shows how to deploy an ibmc server using `pxe`, we are assuming that you are using a **[standalone Ironic](https://docs.openstack.org/project-install-guide/baremetal/newton/standalone.html)** environment. If your ironic environment is different, you can directly check the creating node segment, that is the only difference between `ibmc` driver than other drivers.
 
@@ -76,7 +88,6 @@ Restart the bare metal server, press F11 to enter the Boot menu of the BIOS, and
 2. Insure required services is running
 
 ```bash
-$ systemctl status iscsid
 $ systemctl status ironic-api
 $ systemctl status ironic-conductor
 $ systemctl status nginx
@@ -102,9 +113,10 @@ $ baremetal_deploy_ramdisk="file:///var/lib/ironic/http/deploy/coreos_production
 $ baremetal_ibmc_addr="https://your-ibmc-server-host"
 $ baremetal_ibmc_user="your-ibmc-server-user-account"
 $ baremetal_ibmc_pass="your-ibmc-server-user-password"
-$  NODE=$(openstack baremetal node create --name "$baremetal_name" \
-    --boot-interface "pxe" --deploy-interface "iscsi" \
+$  NODE=$(openstack baremetal node create --name "$baremetal_name" --network-interface "noop"\
+    --boot-interface "pxe" --deploy-interface "direct" \
     --driver "ibmc" \
+    --property capabilities="boot_mode:bios" \
     --driver-info ibmc_address="$baremetal_ibmc_addr" \
     --driver-info ibmc_username="$baremetal_ibmc_user" \
     --driver-info ibmc_password="$baremetal_ibmc_pass" \
@@ -134,8 +146,60 @@ $ openstack baremetal port create --node $NODE "58:F9:87:7A:A9:75"
 $ openstack baremetal port create --node $NODE "58:F9:87:7A:A9:76"
 ```
 
+## Ⅵ. Configuring the RAID
 
-5. Configuring the OS Image to be deployed 
+Refer to related documents before configuring the RAID. Then node status must be：
+
+* ironic raid configuration： https://docs.openstack.org/ironic/latest/admin/raid.html
+
+
+### Configuring target raid config
+
+1.Modify the logical disk configuration file as required and place the reference file in the directory of user home.
+
+```bash
+
+# Modify the RAID drive as required
+  vi raid-config.json 
+
+  {
+    "logical_disks": [
+     {
+          "size_gb": "MAX",
+          "raid_level": "0",
+          "is_root_volume": true
+    }]
+  }
+
+2. Set the RAID configuration option in the node
+$ openstack baremetal node set --target-raid-config raid-config.json "$NODE"
+```
+
+### Execute RAID configuration
+
+```bash
+
+1. Modify the RAID drive as required
+vi clean-steps.json
+
+[{
+	  "interface": "raid",
+	    "step": "delete_configuration"
+},
+{
+	  "interface": "raid",
+	    "step": "create_configuration"
+}]
+
+2. Perform clean step
+$ openstack baremetal node clean "$NODE" --clean-steps ./clean-steps.json
+```
+
+
+## Ⅶ. Deploy Nodes using ibmc driver 
+
+
+1. Configuring the OS Image to be deployed 
 
 ```
 $ baremetal_image="http://192.168.0.100/images/ubuntu-xenial-16.04.qcow2"
@@ -148,7 +212,7 @@ $ openstack baremetal node set "$NODE" \
   --instance-info root_gb="10"
 ```
 
-6. Inspect the created node
+2. Inspect the created node
 
 Run `node show` to confirm the configurations is all right:
 
@@ -156,7 +220,7 @@ Run `node show` to confirm the configurations is all right:
 $ openstack baremetal node show $NODE -f json
 ```
 
-7. Deploying Node
+3. Deploying Node
 
 ```
 openstack baremetal node manage "$NODE" &&
@@ -165,7 +229,7 @@ openstack baremetal node deploy $NODE
 ```
 
 
-## V. Customer calls provided by ibmc driver 
+## Ⅷ. Customer calls provided by ibmc driver 
 
 - Querying vendor specific pass through method:
 ```
