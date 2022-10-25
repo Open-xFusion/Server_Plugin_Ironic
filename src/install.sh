@@ -63,8 +63,6 @@ mkdir -p $TMP_DIR
 BAK_SUFFIX=".$(date +%Y%m%d-%H%M%S)"
 PATH_CONF_INIT="$IRONIC_DIR/conf/__init__.py"
 PATH_CONF_INIT_BAK="$TMP_DIR/__init__.py$BAK_SUFFIX"
-PATH_COMMON_EXCEPTION="$IRONIC_DIR/common/exception.py"
-PATH_COMMON_EXCEPTION_BAK="$TMP_DIR/exception.py$BAK_SUFFIX"
 PATH_ENTRY_POINTS="$IRONIC_EGG_DIR/entry_points.txt"
 PATH_ENTRY_POINTS_BAK="$TMP_DIR/entry_points.txt$BAK_SUFFIX"
 PATH_IRONIC_CONF="/etc/ironic/ironic.conf"
@@ -73,7 +71,8 @@ PATH_IRONIC_CONF_BAK="$TMP_DIR/ironic.conf${BAK_SUFFIX}"
 PATCH_FILE="$PWD/ironic-ibmc-driver-patch.tar"
 # Patch code...
 CODE_CONF_INIT='from ironic.conf import ibmc\nibmc.register_opts(CONF)\n\n'
-CODE_COMMON_EXCEPTION='class IBMCError(IronicException):\n    _msg_fmt = _("IBMC exception occurred. Error: %(error)s")\n\n\nclass IBMCConnectionError(IBMCError):\n    _msg_fmt = _("IBMC connection failed for node %(node)s: %(error)s")\n\n'
+CODE_CONF_INIT_1='from ironic.conf import ibmc\n'
+CODE_CONF_INIT_2='ibmc.register_opts\(CONF\)\n'
 # Patch entry points ...
 INTERFACE_MGMT='ironic.hardware.interfaces.management'
 INTERFACE_POWER='ironic.hardware.interfaces.power'
@@ -97,7 +96,6 @@ function check_envir {
     # Check files, which need modification, whether in consistent state
     # Code ...
     local EX_CONF_INIT=$(grep -E "^from ironic.conf import ibmc" $PATH_CONF_INIT || :)
-    local EX_COMMON_EXCEPTION=$(grep -E "^class IBMCError" $PATH_COMMON_EXCEPTION || :)
     # Entry points ...
     local EX_EP_IBMC_HW=$(grep -E "^$IBMC_HW" $PATH_ENTRY_POINTS || :)
     local EX_EP_IBMC_MGMT=$(grep -E "^$IBMC_MGMT" $PATH_ENTRY_POINTS || :)
@@ -119,11 +117,7 @@ function check_envir {
         EX_FILES[${#EX_FILES[@]}]='\n'
         EX_FILES[${#EX_FILES[@]}]=$PATH_CONF_INIT
     fi
-    if [ ! -z "$EX_COMMON_EXCEPTION" ]
-    then
-        EX_FILES[${#EX_FILES[@]}]='\n'
-        EX_FILES[${#EX_FILES[@]}]=$PATH_COMMON_EXCEPTION
-    fi
+
     if [ ! -z "$EX_EP_IBMC_HW" -o ! -z "$EX_EP_IBMC_POWER" -o \
          ! -z "$EX_EP_IBMC_VENDOR" -o ! -z "$EX_EP_IBMC_MGMT" -o ! -z "$EX_EP_IBMC_RAID" ]
     then
@@ -170,7 +164,6 @@ function config {
 function make_copy {
     # Make copy, for reference only...
     cp $PATH_CONF_INIT $PATH_CONF_INIT_BAK
-    cp $PATH_COMMON_EXCEPTION $PATH_COMMON_EXCEPTION_BAK
     cp $PATH_IRONIC_CONF $PATH_IRONIC_CONF_BAK
     cp $PATH_ENTRY_POINTS $PATH_ENTRY_POINTS_BAK
 }
@@ -189,9 +182,6 @@ function patch {
 
     # Add iBMC related conf
     printf "\n%b" "$CODE_CONF_INIT" >> $PATH_CONF_INIT
-
-    # Add iBMC related exceptions
-    printf "\n%b" "$CODE_COMMON_EXCEPTION" >> $PATH_COMMON_EXCEPTION
 
     # Modify ironic egg info entry_points.txt
     sed -i -r -e "s/(\[$INTERFACE_MGMT\])/\1\n$IBMC_MGMT/" $PATH_ENTRY_POINTS
@@ -219,10 +209,9 @@ function undo_patch {
     local TMP=${CODE_CONF_INIT//\(/\\(}
     TMP=${TMP//\)/\\)}
     perl -0777 -i -pe "s/$TMP//g" $PATH_CONF_INIT
+    perl -0777 -i -pe "s/$CODE_CONF_INIT_1//g" $PATH_CONF_INIT
+    perl -0777 -i -pe "s/$CODE_CONF_INIT_2//g" $PATH_CONF_INIT
 
-    TMP=${CODE_COMMON_EXCEPTION//\(/\\(}
-    TMP=${TMP//\)/\\)}
-    perl -0777 -i -pe "s/$TMP//g" $PATH_COMMON_EXCEPTION
     # Entry points ...
     sed -i -r -e "s/^$IBMC_HW//" $PATH_ENTRY_POINTS
     sed -i -r -e "s/^$IBMC_MGMT//" $PATH_ENTRY_POINTS
