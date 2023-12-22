@@ -6,9 +6,9 @@ The Ironic plug-in is a plug-in integrated in the OpenStack software. It is used
 you can implement the OS deployment on servers by using this plug-in.
 
 - Plug-in name: `ironic_driver_for_iBMC`
-- Plug-in Version: `1.2`
-- Supported version: `OpenStack Ussuri`, `OpenStack yoga`
-- Supported device: `2288H V5`, `CH121 V5`, `1288H V7`, `2288H V7`, `G5500 V7`, `G8600 V7`
+- Plug-in version: `v1.2`
+- Supported version: `OpenStack Ussuri`, `OpenStack Yoga`, `OpenStack Zed`
+- Supported device: `2288H V5`, `CH121 V5`, `1288H V7`, `2288H V7`, `G5500 V7`, `G8600 V7`, `5885H V7`, `2488H V7`
 - Supported iBMC Versions: `3.18 or later(V5)`, `3.06.02.09 or later(V7)`
 
 ## Ⅱ. Plug-in Functions
